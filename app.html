@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CandyMath - sugar stages with the altitude fix</title>
+<style>
+:root { --bg:#0f1216; --card:#1a1f27; --ink:#e8ecf1; --dim:#9aa4b2; --acc:#f2c94c; --good:#4caf7d; --warn:#f2c94c; --bad:#e05c5c; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; }
+.wrap { max-width:760px; margin:0 auto; padding:24px 16px 60px; }
+h1 { font-size:28px; margin:8px 0 2px; }
+.sub { color:var(--dim); margin:0 0 18px; }
+.presets { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+.presets button { background:var(--card); color:var(--ink); border:1px solid #2a3240; border-radius:20px; padding:7px 14px; cursor:pointer; font-size:14px; }
+.presets button.on { border-color:var(--acc); color:var(--acc); }
+.card { background:var(--card); border-radius:14px; padding:16px 18px; margin-bottom:14px; }
+.card h2 { font-size:17px; margin:0 0 12px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+label { display:block; color:var(--dim); font-size:13px; margin-bottom:4px; }
+input,select { width:100%; background:#12161c; border:1px solid #2a3240; color:var(--ink); border-radius:8px; padding:8px 10px; font-size:16px; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-top:12px; }
+.stat { background:#12161c; border-radius:10px; padding:10px 12px; }
+.stat b { display:block; font-size:20px; color:var(--acc); }
+.stat span { color:var(--dim); font-size:12px; }
+.note { margin-top:12px; padding:10px 12px; border-radius:10px; font-size:14px; background:#26200f; color:var(--warn); }
+.note.good { background:#12241b; color:var(--good); }
+.note.bad { background:#2a1515; color:var(--bad); }
+table { width:100%; border-collapse:collapse; margin-top:8px; font-size:14px; }
+th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #262e3a; }
+th { color:var(--dim); font-weight:600; font-size:13px; }
+td.now { color:var(--acc); font-weight:700; }
+.foot { color:var(--dim); font-size:13px; margin-top:6px; }
+a { color:var(--acc); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>🍬 CandyMath</h1>
+<p class="sub">Six syrup stages with approximate elevation correction. Use a recipe and cold-water test alongside the thermometer.</p>
+<div class="presets">
+  <button data-p="fudge">Fudge at sea level</button>
+  <button data-p="denver">Fudge in Denver</button>
+  <button data-p="toffee">Brittle at sea level</button>
+  <button data-p="caramel">Mountain hard crack</button>
+</div>
+
+<div class="card">
+<h2>1. Where are you cooking?</h2>
+<div class="grid">
+  <div><label>Elevation (m)</label><input id="elev" type="number" value="0" step="50"></div>
+
+</div>
+<div class="stats" id="alt"></div>
+<p class="foot">Humidity can affect results. Use a recipe and a cold-water test as well as a thermometer.</p>
+</div>
+
+<div class="card">
+<h2>2. Stage table, corrected for you</h2>
+<table id="stages"></table>
+</div>
+
+<div class="card">
+<h2>3. Thermometer check</h2>
+<div class="grid">
+  <div><label>Reading (°C)</label><input id="temp" type="number" value="114" step="1"></div>
+</div>
+<div class="stats" id="stage"></div>
+<p class="note">Hot sugar can cause serious burns. Never touch syrup to test its temperature. Cool the cold-water sample before touching it.</p>
+</div>
+
+<p class="foot">Rule of thumb: boiling point drops ~1°C per 274 m, and the syrup-stage target drops with it. Test your thermometer in boiling water first - whatever it reads there is your local 100. This is an approximate elevation correction. Weather and thermometer error can change it. Dry caramel is outside this model. <a href="https://www.exploratorium.edu/explore/cooking/candy-making-stages">Stage source</a> · <a href="https://extension.colostate.edu/resource/candy-making-at-high-elevation/">Elevation source</a>. <a href="https://github.com/iLanis-agent/candymath">Source</a></p>
+</div>
+<script src="engine.js"></script>
+<script>
+var $ = function (id) { return document.getElementById(id); };
+var fields = ['elev','temp'];
+function num(id) { return parseFloat($(id).value) || 0; }
+function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+
+function render() {
+  var elev = num('elev');
+  var bp = CandyMath.boilPointC(elev);
+  var off = CandyMath.altitudeOffsetC(elev);
+  $('alt').innerHTML =
+    '<div class="stat"><b>' + (bp === null ? '?' : bp) + '°C</b><span>Water boils here</span></div>' +
+    '<div class="stat"><b>' + (off === null ? '?' : off) + '°C</b><span>Subtract from every recipe temp</span></div>';
+  var cur = CandyMath.stageAt(num('temp'), elev);
+  if (cur && num('temp') > CandyMath.adjustTempC(cur.hiC,elev)) cur=null;
+  var rows = '<tr><th>Stage</th><th>Sea level (°C)</th><th>At your elevation (°C)</th><th>Used for</th></tr>';
+  CandyMath.stages().forEach(function (s) {
+    var lo = CandyMath.adjustTempC(s.loC, elev), hi = CandyMath.adjustTempC(s.hiC, elev);
+    var isNow = cur && cur.id === s.id;
+    rows += '<tr><td class="' + (isNow ? 'now' : '') + '">' + esc(s.name) + (isNow ? ' ◄ you are here' : '') + '</td><td>' + s.loC + '-' + s.hiC + '</td><td>' + lo + '-' + hi + '</td><td>' + esc(s.use) + '</td></tr>';
+  });
+  $('stages').innerHTML = rows;
+
+  if (cur) {
+    $('stage').innerHTML = '<div class="stat"><b>' + esc(cur.name) + '</b><span>At ' + num('temp') + '°C and ' + elev + ' m</span></div><div class="stat"><b>' + esc(cur.use) + '</b><span>Good for</span></div>';
+  } else {
+    $('stage').innerHTML = '<div class="stat"><b>Warming up</b><span>Outside the supported guide or below thread stage. Check elevation and use a cold-water test.</span></div>';
+  }
+
+}
+
+var presets = {
+  fudge: { elev: 0, rh: 40, temp: 114, sugar: 400, invpct: 15, ctemp: 116, mass: 600 },
+  denver: { elev: 1609, rh: 25, temp: 109, sugar: 400, invpct: 15, ctemp: 111, mass: 600 },
+  toffee: { elev: 0, rh: 70, temp: 150, sugar: 500, invpct: 10, ctemp: 149, mass: 500 },
+  caramel: { elev: 2000, rh: 45, temp: 144, sugar: 300, invpct: 0, ctemp: 168, mass: 400 }
+};
+var btns = document.querySelectorAll('.presets button');
+btns.forEach(function (b) {
+  b.addEventListener('click', function () {
+    var p = presets[b.dataset.p], k;
+    for (k in p) { if ($(k)) $(k).value = p[k]; }
+    btns.forEach(function (x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    render();
+  });
+});
+fields.forEach(function (id) { $(id).addEventListener('input', render); });
+document.querySelector('[data-p="fudge"]').classList.add('on');
+render();
+</script>
+</body>
+</html>
